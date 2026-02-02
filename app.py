@@ -101,6 +101,10 @@ from langchain_core.output_parsers import StrOutputParser
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="PDF Intelligence Pro", layout="wide", page_icon="📄")
 
+# Récupération automatique de TA clé depuis les Secrets
+# Plus besoin que l'utilisateur la saisisse !
+GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+
 # Initialisation des variables de session
 if "user_id" not in st.session_state:
     st.session_state.user_id = str(uuid.uuid4())
@@ -111,25 +115,20 @@ if "vectorstore" not in st.session_state:
 if "question_count" not in st.session_state:
     st.session_state.question_count = 0
 
-# --- PARAMÈTRES BUSINESS (MODIFIE TON NUMÉRO ICI) ---
+# --- PARAMÈTRES BUSINESS ---
 LIMIT_GRATUITE = 3
-VOTRE_NUMERO = "221760222771"  # <--- METS TON NUMÉRO ICI (Ex: 22177...)
+VOTRE_NUMERO = "221760222771" # <--- METS TON NUMÉRO ICI
 MESSAGE_WA = "Bonjour, je souhaite débloquer l'accès illimité (9,99€) à l'Assistant PDF."
 LIEN_WHATSAPP = f"https://wa.me/{VOTRE_NUMERO}?text={MESSAGE_WA.replace(' ', '%20')}"
 
 st.title("🚀 PDF Intelligence Pro")
-st.caption("Analysez vos documents instantanément avec l'IA la plus rapide au monde.")
+st.caption("L'IA pour étudiants : Analysez vos cours en un clic.")
 
 # --- SIDEBAR & MONÉTISATION ---
 with st.sidebar:
-    st.header("🔑 Configuration")
-    groq_key = st.text_input("Clé API Groq", type="password", help="Entrez votre clé pour activer l'analyse.")
+    st.header("💎 Statut du compte")
+    st.write(f"Questions : **{st.session_state.question_count} / {LIMIT_GRATUITE}**")
     
-    st.divider()
-    st.subheader("💎 Statut du compte")
-    st.write(f"Questions posées : **{st.session_state.question_count} / {LIMIT_GRATUITE}**")
-    
-    # Barre de progression visuelle
     progress = min(st.session_state.question_count / LIMIT_GRATUITE, 1.0)
     st.progress(progress)
 
@@ -137,99 +136,67 @@ with st.sidebar:
         st.error("🚀 Limite gratuite atteinte !")
         st.markdown(f"""
             <a href="{LIEN_WHATSAPP}" target="_blank" style="text-decoration: none;">
-                <div style="background-color: #25D366; color: white; padding: 15px; border-radius: 10px; text-align: center; font-weight: bold; border: 1px solid #128C7E;">
+                <div style="background-color: #25D366; color: white; padding: 15px; border-radius: 10px; text-align: center; font-weight: bold;">
                     💬 Débloquer l'Illimité via WhatsApp
                 </div>
             </a>
-            <p style="font-size: 12px; color: gray; text-align: center; margin-top: 10px;">
-                Paiement via Wave ou Orange Money accepté.
-            </p>
         """, unsafe_allow_html=True)
     
     st.divider()
-    if st.button("🧹 Effacer l'historique"):
+    if st.button("🧹 Nouvelle session"):
         st.session_state.messages = []
         st.session_state.vectorstore = None
         st.session_state.question_count = 0
         st.rerun()
 
-# --- CHARGEMENT ET TRAITEMENT DU PDF ---
-uploaded_file = st.file_uploader("Étape 1 : Chargez votre PDF", type="pdf")
+# --- CHARGEMENT DU PDF ---
+uploaded_file = st.file_uploader("Chargez votre PDF pour commencer", type="pdf")
 
-if uploaded_file and groq_key:
+if uploaded_file:
     if st.session_state.vectorstore is None:
         unique_filename = f"temp_{st.session_state.user_id}.pdf"
         try:
             with open(unique_filename, "wb") as f:
                 f.write(uploaded_file.getbuffer())
-            with st.spinner("Analyse intelligente du document..."):
+            with st.spinner("L'IA analyse votre document..."):
                 loader = PyPDFLoader(unique_filename)
-                docs = loader.load()
-                text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-                chunks = text_splitter.split_documents(docs)
-                
+                chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100).split_documents(loader.load())
                 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
                 st.session_state.vectorstore = FAISS.from_documents(chunks, embeddings)
-                st.success("✅ Analyse terminée ! Vous pouvez poser vos questions.")
-        except Exception as e:
-            st.error(f"Erreur d'analyse : {e}")
+                st.success("✅ Prêt ! Posez votre question.")
         finally:
-            if os.path.exists(unique_filename):
-                os.remove(unique_filename)
+            if os.path.exists(unique_filename): os.remove(unique_filename)
 
 # --- ZONE DE CHAT ---
-# Afficher l'historique des messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Entrée utilisateur
-if prompt_input := st.chat_input("Posez votre question sur le document..."):
-    # Vérification de la limite de 3 questions
+if prompt_input := st.chat_input("Votre question..."):
     if st.session_state.question_count >= LIMIT_GRATUITE:
-        st.warning("⚠️ Limite atteinte. Veuillez contacter le support via le bouton vert pour continuer.")
-    elif not groq_key or st.session_state.vectorstore is None:
-        st.info("Veuillez entrer votre clé Groq et charger un PDF pour commencer.")
+        st.warning("⚠️ Limite atteinte. Contactez-nous sur WhatsApp pour continuer.")
+    elif st.session_state.vectorstore is None:
+        st.info("Veuillez d'abord charger un PDF.")
     else:
-        # 1. Ajouter le message utilisateur
         st.session_state.messages.append({"role": "user", "content": prompt_input})
         with st.chat_message("user"):
             st.markdown(prompt_input)
 
-        # 2. Générer la réponse de l'assistant
         with st.chat_message("assistant"):
-            try:
-                model = ChatGroq(groq_api_key=groq_key, model_name="llama-3.3-70b-versatile")
-                
-                # Récupération de l'historique récent
-                history_text = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-5:]])
-                
-                qa_prompt = ChatPromptTemplate.from_template("""
-                Tu es un assistant pro qui analyse des documents PDF. 
-                Réponds de manière concise et précise.
-                CONTEXTE : {context}
-                HISTORIQUE : {history}
-                QUESTION : {question}
-                """)
+            # Ici on utilise la clé secrète directement
+            model = ChatGroq(groq_api_key=GROQ_API_KEY, model_name="llama-3.3-70b-versatile")
+            
+            history_text = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-5:]])
+            qa_prompt = ChatPromptTemplate.from_template("Contexte: {context}\nHistorique: {history}\nQuestion: {question}")
 
-                chain = (
-                    {
-                        "context": st.session_state.vectorstore.as_retriever(), 
-                        "question": RunnablePassthrough(), 
-                        "history": lambda x: history_text
-                    }
-                    | qa_prompt 
-                    | model 
-                    | StrOutputParser()
-                )
-                
-                response = chain.invoke(prompt_input)
-                st.markdown(response)
-                
-                # 3. Sauvegarder et incrémenter
-                st.session_state.messages.append({"role": "assistant", "content": response})
-                st.session_state.question_count += 1
-                st.rerun() # Rafraîchir pour mettre à jour le compteur dans la sidebar
-                
-            except Exception as e:
-                st.error("Une erreur est survenue avec le modèle IA. Vérifiez votre clé API.")
+            chain = (
+                {"context": st.session_state.vectorstore.as_retriever(), "question": RunnablePassthrough(), "history": lambda x: history_text}
+                | qa_prompt | model | StrOutputParser()
+            )
+            
+            response = chain.invoke(prompt_input)
+            st.markdown(response)
+            
+            st.session_state.messages.append({"role": "assistant", "content": response})
+            st.session_state.question_count += 1
+            st.rerun()
