@@ -98,8 +98,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="PDF Intelligence Pro", layout="wide", page_icon="💰")
+# --- CONFIGURATION DE LA PAGE ---
+st.set_page_config(page_title="PDF Intelligence Pro", layout="wide", page_icon="📄")
 
 # Initialisation des variables de session
 if "user_id" not in st.session_state:
@@ -111,20 +111,23 @@ if "vectorstore" not in st.session_state:
 if "question_count" not in st.session_state:
     st.session_state.question_count = 0
 
-# --- PARAMÈTRES BUSINESS ---
+# --- PARAMÈTRES BUSINESS (MODIFIE TON NUMÉRO ICI) ---
 LIMIT_GRATUITE = 3
-# Remplace '#' par ton futur lien Stripe ou PayPal
-LIEN_PAIEMENT = "https://paypal.me/votrecompte" 
+VOTRE_NUMERO = "221760222771"  # <--- METS TON NUMÉRO ICI (Ex: 22177...)
+MESSAGE_WA = "Bonjour, je souhaite débloquer l'accès illimité (9,99€) à l'Assistant PDF."
+LIEN_WHATSAPP = f"https://wa.me/{VOTRE_NUMERO}?text={MESSAGE_WA.replace(' ', '%20')}"
 
-st.title("🛡️ PDF Intelligence Pro")
+st.title("🚀 PDF Intelligence Pro")
+st.caption("Analysez vos documents instantanément avec l'IA la plus rapide au monde.")
 
-# --- SIDEBAR & BUSINESS LOGIC ---
+# --- SIDEBAR & MONÉTISATION ---
 with st.sidebar:
-    st.header("💎 Espace Membre")
-    groq_key = st.text_input("Clé API Groq", type="password", help="Entrez votre clé pour tester l'IA")
+    st.header("🔑 Configuration")
+    groq_key = st.text_input("Clé API Groq", type="password", help="Entrez votre clé pour activer l'analyse.")
     
     st.divider()
-    st.write(f"📊 Utilisation gratuite : **{st.session_state.question_count} / {LIMIT_GRATUITE}**")
+    st.subheader("💎 Statut du compte")
+    st.write(f"Questions posées : **{st.session_state.question_count} / {LIMIT_GRATUITE}**")
     
     # Barre de progression visuelle
     progress = min(st.session_state.question_count / LIMIT_GRATUITE, 1.0)
@@ -133,25 +136,25 @@ with st.sidebar:
     if st.session_state.question_count >= LIMIT_GRATUITE:
         st.error("🚀 Limite gratuite atteinte !")
         st.markdown(f"""
-            <a href="{LIEN_PAIEMENT}" target="_blank" style="text-decoration: none;">
-                <div style="background-color: #00BA37; color: white; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; border: 2px solid #008f2a;">
-                    🔓 Débloquer l'Illimité (9,99€)
+            <a href="{LIEN_WHATSAPP}" target="_blank" style="text-decoration: none;">
+                <div style="background-color: #25D366; color: white; padding: 15px; border-radius: 10px; text-align: center; font-weight: bold; border: 1px solid #128C7E;">
+                    💬 Débloquer l'Illimité via WhatsApp
                 </div>
             </a>
-            <p style="font-size: 11px; color: gray; text-align: center; margin-top: 5px;">
-                Accès instantané après paiement
+            <p style="font-size: 12px; color: gray; text-align: center; margin-top: 10px;">
+                Paiement via Wave ou Orange Money accepté.
             </p>
         """, unsafe_allow_html=True)
     
     st.divider()
-    if st.button("🧹 Nouvelle session"):
+    if st.button("🧹 Effacer l'historique"):
         st.session_state.messages = []
         st.session_state.vectorstore = None
         st.session_state.question_count = 0
         st.rerun()
 
-# --- CHARGEMENT DU DOCUMENT ---
-uploaded_file = st.file_uploader("Étape 1 : Déposez votre PDF", type="pdf")
+# --- CHARGEMENT ET TRAITEMENT DU PDF ---
+uploaded_file = st.file_uploader("Étape 1 : Chargez votre PDF", type="pdf")
 
 if uploaded_file and groq_key:
     if st.session_state.vectorstore is None:
@@ -159,50 +162,74 @@ if uploaded_file and groq_key:
         try:
             with open(unique_filename, "wb") as f:
                 f.write(uploaded_file.getbuffer())
-            with st.spinner("Analyse du document..."):
+            with st.spinner("Analyse intelligente du document..."):
                 loader = PyPDFLoader(unique_filename)
-                chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100).split_documents(loader.load())
+                docs = loader.load()
+                text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+                chunks = text_splitter.split_documents(docs)
+                
                 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
                 st.session_state.vectorstore = FAISS.from_documents(chunks, embeddings)
-                st.success("✅ Document prêt !")
+                st.success("✅ Analyse terminée ! Vous pouvez poser vos questions.")
+        except Exception as e:
+            st.error(f"Erreur d'analyse : {e}")
         finally:
-            if os.path.exists(unique_filename): os.remove(unique_filename)
+            if os.path.exists(unique_filename):
+                os.remove(unique_filename)
 
-# --- INTERFACE DE CHAT ---
+# --- ZONE DE CHAT ---
+# Afficher l'historique des messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt_input := st.chat_input("Posez votre question ici..."):
-    # Vérification des limites avant de répondre
+# Entrée utilisateur
+if prompt_input := st.chat_input("Posez votre question sur le document..."):
+    # Vérification de la limite de 3 questions
     if st.session_state.question_count >= LIMIT_GRATUITE:
-        st.warning("⚠️ Limite atteinte. Veuillez utiliser le bouton dans la barre latérale pour continuer.")
+        st.warning("⚠️ Limite atteinte. Veuillez contacter le support via le bouton vert pour continuer.")
     elif not groq_key or st.session_state.vectorstore is None:
-        st.info("Veuillez entrer votre clé API et charger un PDF.")
+        st.info("Veuillez entrer votre clé Groq et charger un PDF pour commencer.")
     else:
-        # Affichage utilisateur
+        # 1. Ajouter le message utilisateur
         st.session_state.messages.append({"role": "user", "content": prompt_input})
         with st.chat_message("user"):
             st.markdown(prompt_input)
 
-        # Réponse Assistant
+        # 2. Générer la réponse de l'assistant
         with st.chat_message("assistant"):
-            model = ChatGroq(groq_api_key=groq_key, model_name="llama-3.3-70b-versatile")
-            history_text = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-5:]])
-            
-            qa_prompt = ChatPromptTemplate.from_template("""
-            Réponds de façon pro. Contexte : {context}. Historique : {history}. Question : {question}
-            """)
+            try:
+                model = ChatGroq(groq_api_key=groq_key, model_name="llama-3.3-70b-versatile")
+                
+                # Récupération de l'historique récent
+                history_text = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-5:]])
+                
+                qa_prompt = ChatPromptTemplate.from_template("""
+                Tu es un assistant pro qui analyse des documents PDF. 
+                Réponds de manière concise et précise.
+                CONTEXTE : {context}
+                HISTORIQUE : {history}
+                QUESTION : {question}
+                """)
 
-            chain = (
-                {"context": st.session_state.vectorstore.as_retriever(), "question": RunnablePassthrough(), "history": lambda x: history_text}
-                | qa_prompt | model | StrOutputParser()
-            )
-            
-            response = chain.invoke(prompt_input)
-            st.markdown(response)
-            
-            # Mise à jour
-            st.session_state.messages.append({"role": "assistant", "content": response})
-            st.session_state.question_count += 1
-            st.rerun()
+                chain = (
+                    {
+                        "context": st.session_state.vectorstore.as_retriever(), 
+                        "question": RunnablePassthrough(), 
+                        "history": lambda x: history_text
+                    }
+                    | qa_prompt 
+                    | model 
+                    | StrOutputParser()
+                )
+                
+                response = chain.invoke(prompt_input)
+                st.markdown(response)
+                
+                # 3. Sauvegarder et incrémenter
+                st.session_state.messages.append({"role": "assistant", "content": response})
+                st.session_state.question_count += 1
+                st.rerun() # Rafraîchir pour mettre à jour le compteur dans la sidebar
+                
+            except Exception as e:
+                st.error("Une erreur est survenue avec le modèle IA. Vérifiez votre clé API.")
