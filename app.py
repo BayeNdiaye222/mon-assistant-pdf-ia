@@ -98,31 +98,60 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 
-# 1. CONFIGURATION
-st.set_page_config(page_title="PDF Intelligence Pro", layout="wide", page_icon="📄")
+# --- CONFIGURATION ---
+st.set_page_config(page_title="PDF Intelligence Pro", layout="wide", page_icon="💰")
 
-# Initialisation de la session
+# Initialisation des variables de session
 if "user_id" not in st.session_state:
     st.session_state.user_id = str(uuid.uuid4())
 if "messages" not in st.session_state:
-    st.session_state.messages = [] # Liste pour stocker les bulles de chat
+    st.session_state.messages = []
 if "vectorstore" not in st.session_state:
     st.session_state.vectorstore = None
+if "question_count" not in st.session_state:
+    st.session_state.question_count = 0
 
-st.title("🚀 PDF Intelligence Pro")
+# --- PARAMÈTRES BUSINESS ---
+LIMIT_GRATUITE = 3
+# Remplace '#' par ton futur lien Stripe ou PayPal
+LIEN_PAIEMENT = "https://paypal.me/votrecompte" 
 
-# SIDEBAR
+st.title("🛡️ PDF Intelligence Pro")
+
+# --- SIDEBAR & BUSINESS LOGIC ---
 with st.sidebar:
-    st.header("🔑 Accès")
-    groq_key = st.text_input("Clé API Groq", type="password")
+    st.header("💎 Espace Membre")
+    groq_key = st.text_input("Clé API Groq", type="password", help="Entrez votre clé pour tester l'IA")
+    
     st.divider()
-    if st.button("🧹 Nouvelle Conversation"):
+    st.write(f"📊 Utilisation gratuite : **{st.session_state.question_count} / {LIMIT_GRATUITE}**")
+    
+    # Barre de progression visuelle
+    progress = min(st.session_state.question_count / LIMIT_GRATUITE, 1.0)
+    st.progress(progress)
+
+    if st.session_state.question_count >= LIMIT_GRATUITE:
+        st.error("🚀 Limite gratuite atteinte !")
+        st.markdown(f"""
+            <a href="{LIEN_PAIEMENT}" target="_blank" style="text-decoration: none;">
+                <div style="background-color: #00BA37; color: white; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; border: 2px solid #008f2a;">
+                    🔓 Débloquer l'Illimité (9,99€)
+                </div>
+            </a>
+            <p style="font-size: 11px; color: gray; text-align: center; margin-top: 5px;">
+                Accès instantané après paiement
+            </p>
+        """, unsafe_allow_html=True)
+    
+    st.divider()
+    if st.button("🧹 Nouvelle session"):
         st.session_state.messages = []
         st.session_state.vectorstore = None
+        st.session_state.question_count = 0
         st.rerun()
 
-# 2. CHARGEMENT DU DOCUMENT
-uploaded_file = st.file_uploader("Téléchargez le document d'analyse", type="pdf")
+# --- CHARGEMENT DU DOCUMENT ---
+uploaded_file = st.file_uploader("Étape 1 : Déposez votre PDF", type="pdf")
 
 if uploaded_file and groq_key:
     if st.session_state.vectorstore is None:
@@ -130,54 +159,50 @@ if uploaded_file and groq_key:
         try:
             with open(unique_filename, "wb") as f:
                 f.write(uploaded_file.getbuffer())
-            
-            with st.spinner("Indexation du document en cours..."):
+            with st.spinner("Analyse du document..."):
                 loader = PyPDFLoader(unique_filename)
                 chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100).split_documents(loader.load())
                 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
                 st.session_state.vectorstore = FAISS.from_documents(chunks, embeddings)
-                st.success("Analysé !")
+                st.success("✅ Document prêt !")
         finally:
             if os.path.exists(unique_filename): os.remove(unique_filename)
 
-# 3. INTERFACE DE CHAT
-# Affichage de l'historique
+# --- INTERFACE DE CHAT ---
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Zone de saisie
-if prompt_input := st.chat_input("Posez votre question sur le document..."):
-    if not groq_key:
-        st.warning("Veuillez entrer votre clé Groq.")
-    elif st.session_state.vectorstore is None:
-        st.warning("Veuillez charger un PDF d'abord.")
+if prompt_input := st.chat_input("Posez votre question ici..."):
+    # Vérification des limites avant de répondre
+    if st.session_state.question_count >= LIMIT_GRATUITE:
+        st.warning("⚠️ Limite atteinte. Veuillez utiliser le bouton dans la barre latérale pour continuer.")
+    elif not groq_key or st.session_state.vectorstore is None:
+        st.info("Veuillez entrer votre clé API et charger un PDF.")
     else:
-        # Afficher le message utilisateur
+        # Affichage utilisateur
         st.session_state.messages.append({"role": "user", "content": prompt_input})
         with st.chat_message("user"):
             st.markdown(prompt_input)
 
-        # Générer la réponse
+        # Réponse Assistant
         with st.chat_message("assistant"):
-            with st.spinner("Réflexion..."):
-                model = ChatGroq(groq_api_key=groq_key, model_name="llama-3.3-70b-versatile")
-                
-                # Construction du prompt dynamique
-                history_text = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-5:]])
-                
-                qa_prompt = ChatPromptTemplate.from_template("""
-                Tu es un analyste pro. Réponds en te basant sur le CONTEXTE et l'HISTORIQUE.
-                HISTORIQUE : {history}
-                CONTEXTE : {context}
-                QUESTION : {question}
-                """)
+            model = ChatGroq(groq_api_key=groq_key, model_name="llama-3.3-70b-versatile")
+            history_text = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-5:]])
+            
+            qa_prompt = ChatPromptTemplate.from_template("""
+            Réponds de façon pro. Contexte : {context}. Historique : {history}. Question : {question}
+            """)
 
-                chain = (
-                    {"context": st.session_state.vectorstore.as_retriever(), "question": RunnablePassthrough(), "history": lambda x: history_text}
-                    | qa_prompt | model | StrOutputParser()
-                )
-                
-                response = chain.invoke(prompt_input)
-                st.markdown(response)
-                st.session_state.messages.append({"role": "assistant", "content": response})
+            chain = (
+                {"context": st.session_state.vectorstore.as_retriever(), "question": RunnablePassthrough(), "history": lambda x: history_text}
+                | qa_prompt | model | StrOutputParser()
+            )
+            
+            response = chain.invoke(prompt_input)
+            st.markdown(response)
+            
+            # Mise à jour
+            st.session_state.messages.append({"role": "assistant", "content": response})
+            st.session_state.question_count += 1
+            st.rerun()
